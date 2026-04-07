@@ -3,568 +3,1044 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>✋ 3D Hand Draw</title>
+<title>AR 3D PAINT ✋</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; cursor: none; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; cursor:none; }
 
-  #threeCanvas { position: fixed; top: 0; left: 0; z-index: 1; }
+/* ── LAYERS ─────────────────────────────── */
+#videoEl {
+  position:fixed; inset:0;
+  width:100vw; height:100vh;
+  object-fit:cover;
+  transform:scaleX(-1);
+  z-index:0;
+  transition: opacity 0.5s;
+}
+#landmarkCanvas {
+  position:fixed; inset:0;
+  width:100vw; height:100vh;
+  z-index:1;
+  transform:scaleX(-1);
+  pointer-events:none;
+}
+#threeCanvas {
+  position:fixed; inset:0;
+  z-index:2;
+}
 
-  /* Camera feed - small corner preview */
-  #camWrap {
-    position: fixed;
-    bottom: 90px; right: 16px;
-    width: 200px; height: 150px;
-    z-index: 20;
-    border: 1px solid #0ff4;
-    box-shadow: 0 0 20px #0ff3;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  #videoEl {
-    width: 100%; height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1); /* mirror */
-    opacity: 0.7;
-  }
-  #landmarkCanvas {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%;
-    transform: scaleX(-1);
-  }
+/* ── START OVERLAY ────────────────────────── */
+#startOverlay {
+  position:fixed; inset:0;
+  z-index:100;
+  background:rgba(0,0,10,0.88);
+  backdrop-filter:blur(24px);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:18px; text-align:center;
+  font-family:'Segoe UI',system-ui,sans-serif;
+}
+#startOverlay .badge {
+  font-size:11px; letter-spacing:6px; color:rgba(255,255,255,0.4);
+  text-transform:uppercase;
+}
+#startOverlay h1 {
+  font-size:clamp(36px,7vw,72px);
+  font-weight:900; letter-spacing:4px;
+  background:linear-gradient(135deg,#00f5ff 0%,#a855f7 50%,#ff6b35 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  line-height:1;
+}
+#startOverlay p {
+  color:rgba(255,255,255,0.4); font-size:13px;
+  letter-spacing:2px; line-height:2.2; max-width:380px;
+}
+#startCamBtn {
+  margin-top:8px; padding:16px 44px;
+  border-radius:50px;
+  border:1px solid rgba(0,245,255,0.4);
+  background:rgba(0,245,255,0.08);
+  backdrop-filter:blur(10px);
+  color:#00f5ff; font-size:12px;
+  letter-spacing:5px; text-transform:uppercase;
+  cursor:pointer; transition:all 0.3s;
+  font-family:inherit;
+}
+#startCamBtn:hover {
+  background:rgba(0,245,255,0.18);
+  box-shadow:0 0 40px rgba(0,245,255,0.25), 0 0 80px rgba(0,245,255,0.1);
+  transform:scale(1.04);
+}
+#skipBtn {
+  color:rgba(255,255,255,0.25); font-size:11px;
+  letter-spacing:3px; cursor:pointer;
+  background:none; border:none;
+  font-family:inherit; transition:color 0.2s;
+  text-transform:uppercase;
+}
+#skipBtn:hover { color:rgba(255,255,255,0.6); }
 
-  /* HUD */
-  #hud {
-    position: fixed; top: 18px; left: 18px;
-    z-index: 30; color: #0ff;
-    text-shadow: 0 0 10px #0ff;
-    font-size: 13px; line-height: 2;
-    pointer-events: none;
-  }
-  #hud h1 {
-    font-size: 22px; letter-spacing: 4px;
-    color: #fff; text-shadow: 0 0 20px #0ff, 0 0 40px #0af;
-    margin-bottom: 4px;
-  }
-  #status {
-    display: inline-block;
-    padding: 3px 10px;
-    border: 1px solid currentColor;
-    font-size: 11px; letter-spacing: 2px;
-    margin-top: 4px;
-  }
-  .s-ok  { color: #0f0; border-color: #0f0; text-shadow: 0 0 8px #0f0; }
-  .s-wait{ color: #ff0; border-color: #ff0; text-shadow: 0 0 8px #ff0; }
-  .s-err { color: #f44; border-color: #f44; text-shadow: 0 0 8px #f44; }
+/* ── HUD TOP LEFT ─────────────────────────── */
+#hud {
+  position:fixed; top:22px; left:22px;
+  z-index:50; pointer-events:none;
+  font-family:'Segoe UI',system-ui,sans-serif;
+}
+.hud-sub {
+  font-size:10px; letter-spacing:6px;
+  color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:4px;
+}
+.hud-title {
+  font-size:clamp(20px,3vw,32px); font-weight:800; letter-spacing:2px;
+  background:linear-gradient(90deg,#00f5ff,#a855f7);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  line-height:1;
+}
+#statusBadge {
+  display:inline-flex; align-items:center; gap:7px;
+  margin-top:10px; padding:5px 13px; border-radius:20px;
+  font-size:10px; letter-spacing:2px; font-weight:600;
+  backdrop-filter:blur(14px);
+  border:1px solid transparent;
+  pointer-events:none;
+  transition:all 0.3s;
+}
+.sdot { width:7px; height:7px; border-radius:50%; animation:sdot 1.4s ease-in-out infinite; }
+@keyframes sdot { 0%,100%{transform:scale(1);opacity:1;} 50%{transform:scale(.6);opacity:.4;} }
+.s-ok  { background:rgba(0,255,100,.1); color:#00ff64; border-color:rgba(0,255,100,.25); }
+.s-ok .sdot { background:#00ff64; box-shadow:0 0 8px #00ff64; }
+.s-wait{ background:rgba(255,200,0,.1); color:#ffc800; border-color:rgba(255,200,0,.25); }
+.s-wait .sdot{ background:#ffc800; box-shadow:0 0 8px #ffc800; }
+.s-err { background:rgba(255,50,50,.1); color:#ff5050; border-color:rgba(255,50,50,.25); }
+.s-err .sdot { background:#ff5050; box-shadow:0 0 8px #ff5050; }
 
-  /* Controls */
-  #controls {
-    position: fixed; bottom: 20px; left: 50%;
-    transform: translateX(-50%);
-    display: flex; gap: 10px; z-index: 30;
-  }
-  button {
-    background: transparent;
-    border: 1px solid #0ff; color: #0ff;
-    padding: 8px 16px;
-    font-family: 'Courier New', monospace;
-    font-size: 11px; letter-spacing: 2px;
-    cursor: pointer;
-    text-shadow: 0 0 8px #0ff;
-    box-shadow: 0 0 10px #0ff3, inset 0 0 10px #0ff1;
-    transition: all 0.2s;
-  }
-  button:hover {
-    background: #0ff2;
-    box-shadow: 0 0 20px #0ff, inset 0 0 15px #0ff3;
-    transform: scale(1.05);
-  }
+/* ── TIPS TOP RIGHT ───────────────────────── */
+#tips {
+  position:fixed; top:22px; right:22px;
+  z-index:50; pointer-events:none;
+  text-align:right;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  color:rgba(255,255,255,0.28);
+  font-size:11px; letter-spacing:1.5px; line-height:2.2;
+}
 
-  /* Color palette */
-  #palette {
-    position: fixed; right: 16px; top: 50%;
-    transform: translateY(-50%);
-    display: flex; flex-direction: column; gap: 10px; z-index: 30;
-  }
-  .cBtn {
-    width: 30px; height: 30px; border-radius: 50%;
-    border: 2px solid #fff3; cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-  }
-  .cBtn.active, .cBtn:hover {
-    transform: scale(1.35); border-color: #fff;
-  }
+/* ── TOOL PANEL LEFT ──────────────────────── */
+#toolPanel {
+  position:fixed; left:18px; top:50%;
+  transform:translateY(-50%);
+  z-index:50;
+  display:flex; flex-direction:column;
+  align-items:center; gap:6px;
+}
+.sec-label {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:9px; letter-spacing:3px;
+  color:rgba(255,255,255,0.25); text-transform:uppercase;
+  margin-top:8px; margin-bottom:2px;
+}
+.toolBtn {
+  position:relative;
+  width:46px; height:46px; border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(0,0,0,0.45);
+  backdrop-filter:blur(20px);
+  color:rgba(255,255,255,0.5);
+  font-size:20px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all 0.2s; user-select:none;
+}
+.toolBtn:hover {
+  border-color:rgba(255,255,255,0.25);
+  background:rgba(255,255,255,0.08);
+  color:#fff; transform:scale(1.1);
+}
+.toolBtn.active {
+  border-color:rgba(0,245,255,0.5);
+  background:rgba(0,245,255,0.1);
+  color:#00f5ff;
+  box-shadow:0 0 20px rgba(0,245,255,0.2);
+}
+.ttip {
+  position:absolute; left:58px; top:50%;
+  transform:translateY(-50%);
+  background:rgba(0,0,0,0.85); backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.1); border-radius:8px;
+  padding:5px 12px; font-size:11px; letter-spacing:1px;
+  color:#fff; white-space:nowrap; pointer-events:none;
+  opacity:0; transition:opacity 0.2s;
+  font-family:'Segoe UI',system-ui,sans-serif;
+}
+.toolBtn:hover .ttip { opacity:1; }
 
-  /* Pinch indicator */
-  #pinchIndicator {
-    position: fixed; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 50; pointer-events: none;
-    font-size: 40px; opacity: 0;
-    transition: opacity 0.15s;
-    text-shadow: 0 0 30px #fff;
-  }
+/* Size slider (vertical) */
+#sizeWrap {
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+}
+#sizeVal {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:9px; color:rgba(0,245,255,.6); letter-spacing:1px;
+}
+input[type=range]#sizeSlider {
+  -webkit-appearance:slider-vertical;
+  writing-mode:vertical-lr; direction:rtl;
+  width:4px; height:70px;
+  background:rgba(255,255,255,0.15);
+  outline:none; cursor:pointer;
+  border-radius:2px;
+}
+input[type=range]#sizeSlider::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:16px; height:16px; border-radius:50%;
+  background:#00f5ff; box-shadow:0 0 10px #00f5ff;
+}
 
-  /* Custom cursor dot (mouse fallback) */
-  #cursorDot {
-    position: fixed; pointer-events: none; z-index: 999;
-    width: 14px; height: 14px; border-radius: 50%;
-    transform: translate(-50%,-50%);
-    background: #0ff;
-    box-shadow: 0 0 12px #0ff, 0 0 24px #0ff;
-    transition: width 0.1s, height 0.1s;
-  }
+/* ── COLOR PALETTE RIGHT ──────────────────── */
+#palette {
+  position:fixed; right:18px; top:50%;
+  transform:translateY(-50%);
+  z-index:50;
+  display:flex; flex-direction:column;
+  align-items:center; gap:9px;
+}
+.pal-label {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:9px; letter-spacing:3px;
+  color:rgba(255,255,255,0.25); text-transform:uppercase;
+  writing-mode:vertical-lr; transform:rotate(180deg);
+  margin:4px 0;
+}
+.cBtn {
+  width:30px; height:30px; border-radius:50%;
+  border:2px solid rgba(255,255,255,0.15);
+  cursor:pointer; transition:all 0.2s;
+  position:relative;
+}
+.cBtn:hover { transform:scale(1.3); border-color:rgba(255,255,255,0.5); }
+.cBtn.active {
+  transform:scale(1.3); border-color:#fff;
+  box-shadow:0 0 16px currentColor;
+}
+.cBtn.active::after {
+  content:''; position:absolute; inset:-6px;
+  border-radius:50%; border:1px solid rgba(255,255,255,0.3);
+}
+#customColorWrap {
+  width:30px; height:30px; border-radius:50%;
+  border:2px dashed rgba(255,255,255,0.3);
+  background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
+  overflow:hidden; cursor:pointer;
+  transition:all 0.2s;
+}
+#customColorWrap:hover { transform:scale(1.15); opacity:1; }
+#customColorInput { opacity:0; width:100%; height:100%; cursor:pointer; }
 
-  #modeTip {
-    position: fixed; bottom: 60px; left: 50%;
-    transform: translateX(-50%);
-    color: #fff5; font-size: 11px;
-    letter-spacing: 1px; z-index: 30;
-    pointer-events: none; text-align: center;
-  }
+/* ── BOTTOM BAR ───────────────────────────── */
+#bottomBar {
+  position:fixed; bottom:24px;
+  left:50%; transform:translateX(-50%);
+  z-index:50;
+  display:flex; gap:14px; align-items:flex-end;
+}
+.cbtn {
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+  cursor:pointer;
+}
+.cbtn-inner {
+  width:52px; height:52px; border-radius:16px;
+  border:1px solid rgba(255,255,255,0.1);
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(20px);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; transition:all 0.2s;
+}
+.cbtn:hover .cbtn-inner {
+  border-color:rgba(255,255,255,0.3);
+  background:rgba(255,255,255,0.08);
+  transform:translateY(-4px);
+  box-shadow:0 10px 30px rgba(0,0,0,0.5);
+}
+.cbtn.active .cbtn-inner {
+  border-color:rgba(0,245,255,0.5);
+  background:rgba(0,245,255,0.12);
+  box-shadow:0 0 24px rgba(0,245,255,0.25);
+}
+.cbtn-label {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:9px; letter-spacing:2px;
+  color:rgba(255,255,255,0.35); text-transform:uppercase;
+  transition:color 0.2s;
+}
+.cbtn.active .cbtn-label { color:#00f5ff; }
 
-  #camLabel {
-    position: absolute; bottom: 4px; left: 6px;
-    font-size: 9px; color: #0ff8; letter-spacing: 1px;
-    z-index: 25;
-  }
+/* ── NOTIF ────────────────────────────────── */
+#notif {
+  position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+  z-index:60; pointer-events:none;
+  padding:9px 20px; border-radius:30px;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.8);
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:12px; letter-spacing:2px;
+  opacity:0; transition:opacity 0.3s;
+  white-space:nowrap;
+}
+
+/* ── PINCH INDICATOR ──────────────────────── */
+#pinchEl {
+  position:fixed; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  z-index:55; pointer-events:none;
+  font-size:52px; opacity:0; transition:opacity 0.15s;
+  filter:drop-shadow(0 0 20px rgba(255,255,255,0.8));
+}
+
+/* ── CURSOR ───────────────────────────────── */
+#cursorDot {
+  position:fixed; pointer-events:none; z-index:999;
+  width:14px; height:14px; border-radius:50%;
+  transform:translate(-50%,-50%);
+  mix-blend-mode:screen;
+  transition:width 0.1s, height 0.1s;
+}
+#brushRing {
+  position:fixed; pointer-events:none; z-index:998;
+  border-radius:50%; transform:translate(-50%,-50%);
+  border:1.5px solid rgba(255,255,255,0.2);
+  transition:width 0.1s, height 0.1s;
+}
+
+/* ── OPACITY SLIDER ───────────────────────── */
+#opacityWrap {
+  position:fixed; bottom:88px; right:18px;
+  z-index:50; display:flex; flex-direction:column; align-items:center; gap:5px;
+}
+.op-label {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:9px; letter-spacing:3px;
+  color:rgba(255,255,255,0.25); text-transform:uppercase;
+}
+input[type=range]#opSlider {
+  -webkit-appearance:none;
+  width:70px; height:3px;
+  background:rgba(255,255,255,0.2);
+  outline:none; border-radius:2px; cursor:pointer;
+}
+input[type=range]#opSlider::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:13px; height:13px; border-radius:50%;
+  background:rgba(255,255,255,0.7);
+}
+
+/* ── AR SCAN LINES ──────────────────────────── */
+#scanlines {
+  position:fixed; inset:0; z-index:3;
+  pointer-events:none;
+  background:repeating-linear-gradient(
+    0deg,transparent,transparent 3px,rgba(0,245,255,0.012) 3px,rgba(0,245,255,0.012) 4px
+  );
+  mix-blend-mode:screen;
+}
+
+/* ── CORNER BRACKETS ──────────────────────── */
+.corner {
+  position:fixed; z-index:4; pointer-events:none;
+  width:24px; height:24px;
+}
+.corner::before, .corner::after {
+  content:''; position:absolute; background:rgba(0,245,255,0.35);
+}
+.corner::before { width:100%; height:2px; }
+.corner::after { width:2px; height:100%; }
+.corner-tl { top:14px; left:14px; }
+.corner-tr { top:14px; right:14px; transform:scaleX(-1); }
+.corner-bl { bottom:14px; left:14px; transform:scaleY(-1); }
+.corner-br { bottom:14px; right:14px; transform:scale(-1); }
 </style>
 </head>
 <body>
 
+<!-- Camera full-screen background (AR layer) -->
+<video id="videoEl" autoplay playsinline muted></video>
+<!-- Hand landmark overlay (full-screen) -->
+<canvas id="landmarkCanvas"></canvas>
+<!-- THREE.js transparent drawing canvas -->
 <canvas id="threeCanvas"></canvas>
 
-<!-- Camera preview -->
-<div id="camWrap">
-  <video id="videoEl" autoplay playsinline muted></video>
-  <canvas id="landmarkCanvas"></canvas>
-  <div id="camLabel">📷 HAND CAM</div>
+<!-- AR aesthetic overlays -->
+<div id="scanlines"></div>
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<!-- ── START OVERLAY ─────────────────────────── -->
+<div id="startOverlay">
+  <div class="badge">✋ Hand Tracking Studio</div>
+  <h1>AR 3D PAINT</h1>
+  <p>
+    Your real world is the canvas.<br>
+    Pinch to draw · Open palm to pause<br>
+    Choose brushes · Pick colors · Save art
+  </p>
+  <button id="startCamBtn">🎥 &nbsp; START CAMERA</button>
+  <button id="skipBtn">Use Mouse / Touch instead</button>
 </div>
 
-<!-- HUD -->
+<!-- ── HUD ───────────────────────────────────── -->
 <div id="hud">
-  <h1>// 3D.DRAW ✋</h1>
-  <div>HAND TRACKING MODE</div>
-  <div id="status" class="s-wait">⏳ LOADING...</div>
-  <div style="color:#fff5;font-size:11px;margin-top:6px">
-    ✊ PINCH = DRAW<br>
-    ✋ OPEN = STOP<br>
-    🔄 MOUSE FALLBACK ON
+  <div class="hud-sub">AR Paint Studio</div>
+  <div class="hud-title">// 3D.DRAW</div>
+  <div id="statusBadge" class="s-wait">
+    <span class="sdot"></span>
+    <span id="statusTxt">READY</span>
   </div>
 </div>
 
+<!-- Tips -->
+<div id="tips">
+  ✊ PINCH → DRAW<br>
+  ✋ OPEN → PAUSE<br>
+  🖱 SCROLL → ZOOM<br>
+  📸 TAP SAVE
+</div>
+
+<!-- ── TOOL PANEL ─────────────────────────────── -->
+<div id="toolPanel">
+  <div class="sec-label">BRUSH</div>
+
+  <div class="toolBtn active" data-tool="neon">✨<span class="ttip">NEON GLOW</span></div>
+  <div class="toolBtn" data-tool="fire">🔥<span class="ttip">FIRE BRUSH</span></div>
+  <div class="toolBtn" data-tool="galaxy">🌌<span class="ttip">GALAXY</span></div>
+  <div class="toolBtn" data-tool="laser">⚡<span class="ttip">LASER BEAM</span></div>
+  <div class="toolBtn" data-tool="chalk">🪄<span class="ttip">MAGIC CHALK</span></div>
+  <div class="toolBtn" data-tool="rainbow">🌈<span class="ttip">RAINBOW</span></div>
+
+  <div class="sec-label">SIZE</div>
+  <div id="sizeWrap">
+    <div id="sizeVal">3</div>
+    <input type="range" id="sizeSlider" min="1" max="10" value="3" orient="vertical">
+  </div>
+
+  <div class="sec-label">ACT</div>
+  <div class="toolBtn" id="eraserBtn">🧹<span class="ttip">ERASER</span></div>
+</div>
+
+<!-- ── COLOR PALETTE ──────────────────────────── -->
 <div id="palette">
-  <div class="cBtn active" style="background:#00ffff;box-shadow:0 0 10px #0ff" data-color="#00ffff"></div>
-  <div class="cBtn" style="background:#ff00ff;box-shadow:0 0 10px #f0f" data-color="#ff00ff"></div>
-  <div class="cBtn" style="background:#ffff00;box-shadow:0 0 10px #ff0" data-color="#ffff00"></div>
-  <div class="cBtn" style="background:#ff4400;box-shadow:0 0 10px #f40" data-color="#ff4400"></div>
-  <div class="cBtn" style="background:#00ff88;box-shadow:0 0 10px #0f8" data-color="#00ff88"></div>
-  <div class="cBtn" style="background:#ffffff;box-shadow:0 0 10px #fff" data-color="#ffffff"></div>
+  <div class="pal-label">COLOR</div>
+  <div class="cBtn active" style="background:#00f5ff" data-color="#00f5ff"></div>
+  <div class="cBtn" style="background:#a855f7" data-color="#a855f7"></div>
+  <div class="cBtn" style="background:#ff6b35" data-color="#ff6b35"></div>
+  <div class="cBtn" style="background:#ff0055" data-color="#ff0055"></div>
+  <div class="cBtn" style="background:#00ff88" data-color="#00ff88"></div>
+  <div class="cBtn" style="background:#ffdd00" data-color="#ffdd00"></div>
+  <div class="cBtn" style="background:#ff44aa" data-color="#ff44aa"></div>
+  <div class="cBtn" style="background:#4488ff" data-color="#4488ff"></div>
+  <div class="cBtn" style="background:#ffffff" data-color="#ffffff"></div>
+  <div class="cBtn" style="background:#000000;border-color:rgba(255,255,255,0.3)" data-color="#111111"></div>
+  <div id="customColorWrap" title="Custom color">
+    <input type="color" id="customColorInput" value="#00f5ff">
+  </div>
 </div>
 
-<div id="controls">
-  <button id="clearBtn">[ CLEAR ]</button>
-  <button id="undoBtn">[ UNDO ]</button>
-  <button id="camBtn">[ CAM START ]</button>
-  <button id="mouseBtn">[ MOUSE MODE ]</button>
+<!-- ── BOTTOM BAR ─────────────────────────────── -->
+<div id="bottomBar">
+  <div class="cbtn" id="camBtn">
+    <div class="cbtn-inner">📷</div>
+    <div class="cbtn-label">CAMERA</div>
+  </div>
+  <div class="cbtn" id="undoBtn">
+    <div class="cbtn-inner">↩️</div>
+    <div class="cbtn-label">UNDO</div>
+  </div>
+  <div class="cbtn" id="clearBtn">
+    <div class="cbtn-inner">🗑️</div>
+    <div class="cbtn-label">CLEAR</div>
+  </div>
+  <div class="cbtn" id="saveBtn">
+    <div class="cbtn-inner">📸</div>
+    <div class="cbtn-label">SAVE</div>
+  </div>
+  <div class="cbtn" id="bgBtn">
+    <div class="cbtn-inner">🌌</div>
+    <div class="cbtn-label">BG</div>
+  </div>
+  <div class="cbtn" id="orbitBtn">
+    <div class="cbtn-inner">🔄</div>
+    <div class="cbtn-label">ORBIT</div>
+  </div>
 </div>
 
-<div id="modeTip">☝️ HOLD UP INDEX FINGER + PINCH THUMB TO DRAW</div>
-<div id="pinchIndicator">✍️</div>
+<!-- Opacity control -->
+<div id="opacityWrap">
+  <div class="op-label">OPACITY</div>
+  <input type="range" id="opSlider" min="20" max="100" value="100">
+</div>
+
+<div id="pinchEl">✍️</div>
 <div id="cursorDot"></div>
+<div id="brushRing"></div>
+<div id="notif"></div>
 
-<!-- Three.js -->
+<!-- ═══ SCRIPTS ═══════════════════════════════════════ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<!-- MediaPipe Hands -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
 <script>
-// ══════════════════════════════════════════════
-//  THREE.JS SCENE
-// ══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  THREE.JS — transparent AR canvas
+// ═══════════════════════════════════════════════════════
 const threeCanvas = document.getElementById('threeCanvas');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000008);
-scene.fog = new THREE.FogExp2(0x000008, 0.028);
 
-const camera3d = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 500);
-camera3d.position.set(0, 0, 18);
+const cam3d = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 1000);
+cam3d.position.set(0, 0, 18);
 
-const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0); // FULLY TRANSPARENT — camera shows through
 
-// Grid
-const grid = new THREE.GridHelper(50, 50, 0x0a1f1f, 0x0a1f1f);
-grid.position.y = -5;
-scene.add(grid);
+// Ambient particles (subtle, always visible in AR mode)
+(function makeParticles() {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(500 * 3);
+  for (let i = 0; i < pos.length; i++) pos[i] = (Math.random() - 0.5) * 80;
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0x335577, size: 0.06, transparent: true, opacity: 0.3
+  })));
+})();
 
-// Stars
-const starGeo = new THREE.BufferGeometry();
-const starPos = new Float32Array(400*3);
-for (let i=0;i<400*3;i++) starPos[i]=(Math.random()-.5)*80;
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0x112244,size:0.07})));
+// ═══════════════════════════════════════════════════════
+//  DRAW STATE
+// ═══════════════════════════════════════════════════════
+let currentColor = '#00f5ff';
+let currentTool  = 'neon';
+let brushSize    = 3;
+let strokeOpacity = 1.0;
+let eraserMode   = false;
+let bgMode       = 'ar'; // 'ar' | '3d'
+let orbitEnabled = false;
 
-// ── DRAW STATE ──────────────────────────────
-let currentColor = '#00ffff';
-let isDrawing = false;
+let isDrawing   = false;
 let currentLine = null;
 let currentPoints = [];
-const allStrokes = [];
-const strokeGroups = []; // each "stroke group" = main + glow lines
+const allStrokes   = [];  // flat list of THREE objects
+const strokeGroups = [];  // for undo (each = array of THREE objects)
 
-const drawPlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
+// Rainbow hue accumulator
+let rainbowHue = 0;
+
+const drawPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const raycaster = new THREE.Raycaster();
 
 function screenToWorld(sx, sy) {
-  const ndc = new THREE.Vector2(
-    (sx/innerWidth)*2-1,
-    -(sy/innerHeight)*2+1
-  );
-  raycaster.setFromCamera(ndc, camera3d);
+  const ndc = new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, cam3d);
   const t = new THREE.Vector3();
-  raycaster.ray.intersectPlane(drawPlane, t);
-  return t;
+  return raycaster.ray.intersectPlane(drawPlane, t) ? t : null;
 }
 
+// ── STROKE ───────────────────────────────────────────
 function startStroke(x, y) {
   currentPoints = [];
   const pt = screenToWorld(x, y);
   if (!pt) return;
   currentPoints.push(pt.clone());
+  rainbowHue = Math.random();
 
   const geo = new THREE.BufferGeometry().setFromPoints(currentPoints);
-  const mat = new THREE.LineBasicMaterial({ color: currentColor, linewidth: 2 });
+  const mat = makeMat(currentColor, 1);
   currentLine = new THREE.Line(geo, mat);
   scene.add(currentLine);
+}
+
+function makeMat(col, opacity) {
+  return new THREE.LineBasicMaterial({
+    color: col, linewidth: 1,
+    transparent: opacity < 1,
+    opacity: opacity * strokeOpacity
+  });
 }
 
 function addPoint(x, y) {
   if (!currentLine) return;
   const pt = screenToWorld(x, y);
   if (!pt) return;
-  const last = currentPoints[currentPoints.length-1];
-  if (last && pt.distanceTo(last) < 0.04) return;
+  const last = currentPoints[currentPoints.length - 1];
+  if (last && pt.distanceTo(last) < 0.03) return;
+
+  // Rainbow: shift color per segment
+  if (currentTool === 'rainbow') {
+    rainbowHue = (rainbowHue + 0.008) % 1;
+    const c = new THREE.Color();
+    c.setHSL(rainbowHue, 1, 0.6);
+    currentLine.material.color.copy(c);
+  }
+
   currentPoints.push(pt.clone());
   currentLine.geometry.setFromPoints(currentPoints);
   currentLine.geometry.attributes.position.needsUpdate = true;
+
+  // Particle effects
+  if (currentTool === 'galaxy' && Math.random() > 0.65) spawnGalaxyParticle(pt);
+  if (currentTool === 'fire'   && Math.random() > 0.5)  spawnFireParticle(pt);
+  if (currentTool === 'chalk'  && Math.random() > 0.7)  spawnChalkDust(pt);
+}
+
+function spawnGalaxyParticle(pt) {
+  const n = 5;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    pos[i*3]   = pt.x + (Math.random()-.5) * 1.8;
+    pos[i*3+1] = pt.y + (Math.random()-.5) * 1.8;
+    pos[i*3+2] = pt.z + (Math.random()-.5) * 0.6;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const p = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: currentColor, size: 0.12 + Math.random()*0.18,
+    transparent: true, opacity: 0.9
+  }));
+  p.userData = { type: 'particle', decay: 0.018 };
+  scene.add(p);
+  allStrokes.push(p);
+}
+
+function spawnFireParticle(pt) {
+  const cols = ['#ff4400','#ff8800','#ffcc00','#ff2200','#ff6600'];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([pt.x, pt.y, pt.z]), 3));
+  const p = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: cols[Math.floor(Math.random()*cols.length)],
+    size: 0.22 + Math.random()*0.28, transparent: true, opacity: 1
+  }));
+  p.userData = { type: 'fire', vy: 0.025 + Math.random()*0.04, decay: 0.022 };
+  scene.add(p);
+  allStrokes.push(p);
+}
+
+function spawnChalkDust(pt) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(3);
+  pos[0] = pt.x + (Math.random()-.5)*0.5;
+  pos[1] = pt.y + (Math.random()-.5)*0.5;
+  pos[2] = pt.z;
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const p = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: currentColor, size: 0.06 + Math.random()*0.08,
+    transparent: true, opacity: 0.7
+  }));
+  p.userData = { type: 'particle', decay: 0.025 };
+  scene.add(p);
+  allStrokes.push(p);
 }
 
 function endStroke() {
   if (!currentLine) return;
-  if (currentPoints.length < 2) { scene.remove(currentLine); currentLine=null; return; }
+  if (currentPoints.length < 2) { scene.remove(currentLine); currentLine = null; return; }
 
   const group = [currentLine];
-  // Glow copies
-  for (let g=0; g<3; g++) {
-    const offPts = currentPoints.map(p => new THREE.Vector3(
-      p.x+(Math.random()-.5)*0.09*(g+1),
-      p.y+(Math.random()-.5)*0.09*(g+1),
-      p.z - g*0.06
-    ));
-    const gGeo = new THREE.BufferGeometry().setFromPoints(offPts);
-    const gMat = new THREE.LineBasicMaterial({
-      color: currentColor, transparent:true, opacity: 0.22
-    });
-    const gLine = new THREE.Line(gGeo, gMat);
-    scene.add(gLine);
-    group.push(gLine);
-    allStrokes.push(gLine);
+  const numGlows = currentTool === 'laser' ? 4 : currentTool === 'neon' ? 3 : currentTool === 'galaxy' ? 2 : 2;
+  const baseOpacity = currentTool === 'laser' ? 0.18 : 0.2;
+
+  // Glow layers
+  for (let g = 0; g < numGlows; g++) {
+    const geo2 = currentLine.geometry.clone();
+    const glow = new THREE.Line(geo2, new THREE.LineBasicMaterial({
+      color: currentColor, transparent: true,
+      opacity: (baseOpacity / (g + 1)) * strokeOpacity
+    }));
+    scene.add(glow);
+    allStrokes.push(glow);
+    group.push(glow);
   }
+
+  // Laser: white core
+  if (currentTool === 'laser') {
+    const core = new THREE.Line(currentLine.geometry.clone(),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 * strokeOpacity }));
+    scene.add(core);
+    allStrokes.push(core);
+    group.push(core);
+  }
+
   allStrokes.push(currentLine);
   strokeGroups.push(group);
   currentLine = null;
   currentPoints = [];
 }
 
-// ── FLOATING FINGER DOT ──────────────────────
-const fingerGeo = new THREE.SphereGeometry(0.15, 12, 12);
-const fingerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-const fingerDot = new THREE.Mesh(fingerGeo, fingerMat);
+// ── FINGER CURSOR (3D) ─────────────────────────────
+const fdMat = new THREE.MeshBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.9 });
+const fingerDot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), fdMat);
 fingerDot.visible = false;
 scene.add(fingerDot);
 
-// Glow ring around finger
-const ringGeo = new THREE.TorusGeometry(0.25, 0.04, 8, 32);
-const ringMat = new THREE.MeshBasicMaterial({ color:0x00ffff, transparent:true, opacity:0.4 });
-const fingerRing = new THREE.Mesh(ringGeo, ringMat);
-fingerDot.add(fingerRing);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+const fingerRing = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.34, 32), ringMat);
+fingerRing.visible = false;
+scene.add(fingerRing);
 
-// ══════════════════════════════════════════════
-//  MEDIAPIPE HANDS
-// ══════════════════════════════════════════════
-const videoEl = document.getElementById('videoEl');
-const lmCanvas = document.getElementById('landmarkCanvas');
-const lmCtx = lmCanvas.getContext('2d');
-const statusEl = document.getElementById('status');
-const pinchEl = document.getElementById('pinchIndicator');
+// ═══════════════════════════════════════════════════════
+//  HAND TRACKING (MediaPipe)
+// ═══════════════════════════════════════════════════════
+const videoEl     = document.getElementById('videoEl');
+const lmCanvas    = document.getElementById('landmarkCanvas');
+const lmCtx       = lmCanvas.getContext('2d');
+const statusTxt   = document.getElementById('statusTxt');
+const statusBadge = document.getElementById('statusBadge');
+const pinchEl     = document.getElementById('pinchEl');
 
 let handTrackingActive = false;
-let lastFingerX = innerWidth/2, lastFingerY = innerHeight/2;
+let handsModel = null, mpCam = null;
 let pinchActive = false;
-let handsModel = null;
-let mpCamera = null;
+let lastFX = innerWidth/2, lastFY = innerHeight/2;
+
+lmCanvas.width  = innerWidth;
+lmCanvas.height = innerHeight;
 
 function setStatus(msg, cls) {
-  statusEl.textContent = msg;
-  statusEl.className = 'status ' + cls;
+  statusTxt.textContent = msg;
+  statusBadge.className = cls;
 }
 
-async function startHandTracking() {
-  setStatus('⏳ CAM PERMISSION...', 's-wait');
+async function startCam() {
+  setStatus('CAMERA PERMISSION...', 's-wait');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' }
+      video: { width: 1280, height: 720, facingMode: 'user' }
     });
     videoEl.srcObject = stream;
     await new Promise(r => videoEl.onloadedmetadata = r);
-    lmCanvas.width = videoEl.videoWidth;
-    lmCanvas.height = videoEl.videoHeight;
 
-    setStatus('⏳ LOADING MediaPipe...', 's-wait');
+    setStatus('LOADING AI MODEL...', 's-wait');
 
-    handsModel = new Hands({
-      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
-    });
-    handsModel.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.6,
-    });
+    handsModel = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    handsModel.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.75, minTrackingConfidence:0.65 });
     handsModel.onResults(onHandResults);
 
-    mpCamera = new Camera(videoEl, {
-      onFrame: async () => { await handsModel.send({ image: videoEl }); },
-      width: 640, height: 480
-    });
-    mpCamera.start();
+    mpCam = new Camera(videoEl, { onFrame: async () => { await handsModel.send({ image: videoEl }); }, width:1280, height:720 });
+    mpCam.start();
 
     handTrackingActive = true;
-    document.getElementById('camBtn').textContent = '[ CAM STOP ]';
-    setStatus('✅ HAND TRACK ON', 's-ok');
-
-  } catch(err) {
-    setStatus('❌ CAM ERROR', 's-err');
-    console.error(err);
-    alert('Camera error: ' + err.message + '\n\nUse Mouse Mode instead!');
+    document.getElementById('camBtn').classList.add('active');
+    setStatus('TRACKING ON', 's-ok');
+    notify('✋ Pinch to draw in your world!');
+  } catch(e) {
+    setStatus('CAM ERROR', 's-err');
+    notify('❌ Camera error — using mouse/touch mode');
+    console.error(e);
   }
 }
 
-function stopHandTracking() {
-  if (mpCamera) { mpCamera.stop(); mpCamera = null; }
-  if (videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(t => t.stop());
-    videoEl.srcObject = null;
-  }
+function stopCam() {
+  if (mpCam) { mpCam.stop(); mpCam = null; }
+  if (videoEl.srcObject) { videoEl.srcObject.getTracks().forEach(t => t.stop()); videoEl.srcObject = null; }
   handTrackingActive = false;
-  fingerDot.visible = false;
+  fingerDot.visible = fingerRing.visible = false;
+  lmCtx.clearRect(0, 0, lmCanvas.width, lmCanvas.height);
   if (isDrawing) { endStroke(); isDrawing = false; }
-  document.getElementById('camBtn').textContent = '[ CAM START ]';
-  setStatus('📵 CAM OFF', 's-wait');
+  document.getElementById('camBtn').classList.remove('active');
+  setStatus('CAMERA OFF', 's-wait');
 }
 
-// ── HAND RESULTS ─────────────────────────────
-function onHandResults(results) {
-  // Draw landmarks on small preview
+// ── HAND RESULTS ──────────────────────────────────────
+function onHandResults(res) {
   lmCtx.clearRect(0, 0, lmCanvas.width, lmCanvas.height);
-
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    fingerDot.visible = false;
+  if (!res.multiHandLandmarks || !res.multiHandLandmarks.length) {
+    fingerDot.visible = fingerRing.visible = false;
     if (isDrawing) { endStroke(); isDrawing = false; }
     return;
   }
 
-  const lm = results.multiHandLandmarks[0];
-
-  // Draw skeleton on preview
+  const lm = res.multiHandLandmarks[0];
   drawSkeleton(lm);
 
-  // Index finger tip = landmark 8
-  // Thumb tip = landmark 4
-  const indexTip = lm[8];
-  const thumbTip = lm[4];
+  const ix = lm[8], th = lm[4];
+  const sx = (1 - ix.x) * innerWidth;
+  const sy = ix.y * innerHeight;
+  lastFX = sx; lastFY = sy;
 
-  // Map to screen (note: MediaPipe x is mirrored, we mirror video too)
-  const sx = (1 - indexTip.x) * innerWidth;
-  const sy = indexTip.y * innerHeight;
-
-  lastFingerX = sx;
-  lastFingerY = sy;
-
-  // Move 3D finger dot
-  const worldPt = screenToWorld(sx, sy);
-  if (worldPt) {
-    fingerDot.visible = true;
-    fingerDot.position.copy(worldPt);
-    fingerMat.color.setStyle(currentColor);
+  const wp = screenToWorld(sx, sy);
+  if (wp) {
+    fingerDot.visible = fingerRing.visible = true;
+    fingerDot.position.copy(wp);
+    fingerRing.position.copy(wp);
+    fdMat.color.setStyle(currentColor);
     ringMat.color.setStyle(currentColor);
   }
 
-  // Pinch detection: distance between index tip and thumb tip
-  const dx = indexTip.x - thumbTip.x;
-  const dy = indexTip.y - thumbTip.y;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-  const isPinching = dist < 0.07;
+  const dx = ix.x - th.x, dy = ix.y - th.y;
+  const pinching = Math.sqrt(dx*dx + dy*dy) < 0.07;
 
-  if (isPinching && !pinchActive) {
-    // Start drawing
+  if (pinching && !pinchActive) {
     pinchActive = true;
-    isDrawing = true;
-    startStroke(sx, sy);
+    if (!eraserMode) { isDrawing = true; startStroke(sx, sy); }
     pinchEl.style.opacity = '1';
-    fingerRing.scale.set(0.5,0.5,0.5);
-  } else if (isPinching && pinchActive) {
-    // Continue drawing
-    addPoint(sx, sy);
-  } else if (!isPinching && pinchActive) {
-    // Stop drawing
-    pinchActive = false;
-    isDrawing = false;
-    endStroke();
+    fingerRing.scale.setScalar(0.55);
+  } else if (pinching && pinchActive) {
+    if (!eraserMode && isDrawing) addPoint(sx, sy);
+  } else if (!pinching && pinchActive) {
+    pinchActive = false; isDrawing = false; endStroke();
     pinchEl.style.opacity = '0';
-    fingerRing.scale.set(1,1,1);
+    fingerRing.scale.setScalar(1);
   }
 }
 
-// Draw hand skeleton on preview canvas
-const CONNECTIONS = [
-  [0,1],[1,2],[2,3],[3,4],
-  [0,5],[5,6],[6,7],[7,8],
-  [5,9],[9,10],[10,11],[11,12],
-  [9,13],[13,14],[14,15],[15,16],
-  [13,17],[17,18],[18,19],[19,20],[0,17]
-];
+// ── SKELETON ON FULL CANVAS ───────────────────────────
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 function drawSkeleton(lm) {
   const w = lmCanvas.width, h = lmCanvas.height;
-  lmCtx.strokeStyle = '#0ff';
-  lmCtx.lineWidth = 1.5;
-  lmCtx.shadowColor = '#0ff';
-  lmCtx.shadowBlur = 6;
-
-  CONNECTIONS.forEach(([a,b]) => {
+  lmCtx.shadowBlur = 10;
+  CONN.forEach(([a,b]) => {
     lmCtx.beginPath();
     lmCtx.moveTo(lm[a].x*w, lm[a].y*h);
     lmCtx.lineTo(lm[b].x*w, lm[b].y*h);
+    lmCtx.strokeStyle = 'rgba(0,245,255,0.45)';
+    lmCtx.shadowColor = '#00f5ff';
+    lmCtx.lineWidth = 1.5;
     lmCtx.stroke();
   });
-
   lm.forEach((pt, i) => {
+    const col = i===8 ? currentColor : i===4 ? '#ff44ff' : 'rgba(0,245,255,0.6)';
+    const r = i===8||i===4 ? 6 : 3;
     lmCtx.beginPath();
-    lmCtx.arc(pt.x*w, pt.y*h, i===8||i===4?4:2.5, 0, Math.PI*2);
-    lmCtx.fillStyle = i===8 ? '#ff0' : i===4 ? '#f0f' : '#0ff';
-    lmCtx.shadowColor = lmCtx.fillStyle;
+    lmCtx.arc(pt.x*w, pt.y*h, r, 0, Math.PI*2);
+    lmCtx.fillStyle = col;
+    lmCtx.shadowColor = col;
+    lmCtx.shadowBlur = 14;
     lmCtx.fill();
   });
 }
 
-// ══════════════════════════════════════════════
-//  MOUSE FALLBACK
-// ══════════════════════════════════════════════
-let mouseMode = false;
+// ═══════════════════════════════════════════════════════
+//  MOUSE / TOUCH FALLBACK
+// ═══════════════════════════════════════════════════════
 const cursorDot = document.getElementById('cursorDot');
+const brushRing = document.getElementById('brushRing');
 
-threeCanvas.addEventListener('mousedown', e => {
-  if (e.button !== 0 || handTrackingActive) return;
-  isDrawing = true;
-  startStroke(e.clientX, e.clientY);
-});
-threeCanvas.addEventListener('mousemove', e => {
-  cursorDot.style.left = e.clientX+'px';
-  cursorDot.style.top  = e.clientY+'px';
-  cursorDot.style.background = currentColor;
-  cursorDot.style.boxShadow = `0 0 12px ${currentColor}, 0 0 24px ${currentColor}`;
+document.addEventListener('mousemove', e => {
+  cursorDot.style.cssText += `left:${e.clientX}px;top:${e.clientY}px;background:${currentColor};box-shadow:0 0 12px ${currentColor},0 0 24px ${currentColor}`;
+  const rs = brushSize * 8;
+  brushRing.style.cssText += `left:${e.clientX}px;top:${e.clientY}px;width:${rs}px;height:${rs}px;border-color:${currentColor}44`;
   if (isDrawing && !handTrackingActive) addPoint(e.clientX, e.clientY);
 });
-threeCanvas.addEventListener('mouseup', e => {
-  if (e.button!==0 || handTrackingActive) return;
-  isDrawing = false; endStroke();
-});
+threeCanvas.addEventListener('mousedown', e => { if (e.button||handTrackingActive) return; isDrawing=true; startStroke(e.clientX,e.clientY); });
+threeCanvas.addEventListener('mouseup',   e => { if (e.button||handTrackingActive) return; isDrawing=false; endStroke(); });
 threeCanvas.addEventListener('contextmenu', e => e.preventDefault());
 threeCanvas.addEventListener('wheel', e => {
-  camera3d.position.z += e.deltaY * 0.04;
-  camera3d.position.z = Math.max(4, Math.min(60, camera3d.position.z));
+  cam3d.position.z = Math.max(3, Math.min(80, cam3d.position.z + e.deltaY * 0.025));
+});
+threeCanvas.addEventListener('touchstart', e => { e.preventDefault(); if(handTrackingActive)return; const t=e.touches[0]; isDrawing=true; startStroke(t.clientX,t.clientY); }, {passive:false});
+threeCanvas.addEventListener('touchmove',  e => { e.preventDefault(); if(handTrackingActive)return; const t=e.touches[0]; addPoint(t.clientX,t.clientY); }, {passive:false});
+threeCanvas.addEventListener('touchend',   e => { if(handTrackingActive)return; isDrawing=false; endStroke(); });
+
+// ═══════════════════════════════════════════════════════
+//  UI INTERACTIONS
+// ═══════════════════════════════════════════════════════
+
+// Tools
+document.querySelectorAll('.toolBtn[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.toolBtn[data-tool]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTool = btn.dataset.tool;
+    eraserMode = false;
+    document.getElementById('eraserBtn').classList.remove('active');
+    notify('🎨 ' + btn.querySelector('.ttip').textContent);
+  });
 });
 
-// Touch
-threeCanvas.addEventListener('touchstart', e=>{e.preventDefault();
-  if(handTrackingActive)return;
-  const t=e.touches[0];isDrawing=true;startStroke(t.clientX,t.clientY);},{passive:false});
-threeCanvas.addEventListener('touchmove', e=>{e.preventDefault();
-  if(handTrackingActive)return;
-  const t=e.touches[0];addPoint(t.clientX,t.clientY);},{passive:false});
-threeCanvas.addEventListener('touchend', e=>{
-  if(handTrackingActive)return;
-  isDrawing=false;endStroke();},{passive:false});
-
-// ── BUTTONS ──────────────────────────────────
-document.getElementById('clearBtn').addEventListener('click', () => {
-  allStrokes.forEach(l => scene.remove(l));
-  allStrokes.length = 0; strokeGroups.length = 0;
+// Eraser
+document.getElementById('eraserBtn').addEventListener('click', () => {
+  eraserMode = !eraserMode;
+  document.getElementById('eraserBtn').classList.toggle('active', eraserMode);
+  notify(eraserMode ? '🧹 Eraser ON' : '🖌 Brush ON');
 });
 
-document.getElementById('undoBtn').addEventListener('click', () => {
-  const grp = strokeGroups.pop();
-  if (!grp) return;
-  grp.forEach(l => { scene.remove(l); allStrokes.splice(allStrokes.indexOf(l),1); });
+// Size
+document.getElementById('sizeSlider').addEventListener('input', e => {
+  brushSize = parseInt(e.target.value);
+  document.getElementById('sizeVal').textContent = brushSize;
 });
 
-document.getElementById('camBtn').addEventListener('click', () => {
-  if (!handTrackingActive) startHandTracking();
-  else stopHandTracking();
+// Opacity
+document.getElementById('opSlider').addEventListener('input', e => {
+  strokeOpacity = parseInt(e.target.value) / 100;
 });
 
-document.getElementById('mouseBtn').addEventListener('click', () => {
-  mouseMode = !mouseMode;
-  document.getElementById('mouseBtn').textContent =
-    mouseMode ? '[ HAND MODE ]' : '[ MOUSE MODE ]';
-  if (mouseMode && handTrackingActive) stopHandTracking();
-});
-
+// Colors
 document.querySelectorAll('.cBtn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.cBtn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.cBtn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentColor = btn.dataset.color;
-    fingerMat.color.setStyle(currentColor);
+    fdMat.color.setStyle(currentColor);
   });
 });
-
-// ── RESIZE ───────────────────────────────────
-window.addEventListener('resize', () => {
-  camera3d.aspect = innerWidth/innerHeight;
-  camera3d.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+document.getElementById('customColorInput').addEventListener('input', e => {
+  currentColor = e.target.value;
+  document.querySelectorAll('.cBtn').forEach(b => b.classList.remove('active'));
+  fdMat.color.setStyle(currentColor);
 });
 
-// ── ANIMATE ──────────────────────────────────
-let t = 0;
+// Bottom buttons
+document.getElementById('camBtn').addEventListener('click', () => {
+  handTrackingActive ? stopCam() : startCam();
+});
+document.getElementById('undoBtn').addEventListener('click', () => {
+  const g = strokeGroups.pop();
+  if (!g) return;
+  g.forEach(o => { scene.remove(o); const i = allStrokes.indexOf(o); if(i>-1) allStrokes.splice(i,1); });
+  notify('↩ Undo');
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  allStrokes.forEach(o => scene.remove(o));
+  allStrokes.length = strokeGroups.length = 0;
+  notify('🗑 Canvas cleared');
+});
+document.getElementById('saveBtn').addEventListener('click', saveArt);
+document.getElementById('bgBtn').addEventListener('click', () => {
+  bgMode = bgMode === 'ar' ? '3d' : 'ar';
+  if (bgMode === '3d') {
+    renderer.setClearColor(0x00000a, 1);
+    scene.fog = new THREE.FogExp2(0x00000a, 0.012);
+    videoEl.style.opacity = '0';
+    lmCanvas.style.opacity = '0';
+    document.getElementById('scanlines').style.opacity = '0.3';
+    document.getElementById('bgBtn').classList.add('active');
+    notify('🌌 Space Mode');
+  } else {
+    renderer.setClearColor(0x000000, 0);
+    scene.fog = null;
+    videoEl.style.opacity = '1';
+    lmCanvas.style.opacity = '1';
+    document.getElementById('scanlines').style.opacity = '1';
+    document.getElementById('bgBtn').classList.remove('active');
+    notify('📷 AR Mode');
+  }
+});
+document.getElementById('orbitBtn').addEventListener('click', () => {
+  orbitEnabled = !orbitEnabled;
+  document.getElementById('orbitBtn').classList.toggle('active', orbitEnabled);
+  notify(orbitEnabled ? '🔄 Orbit ON — drag to rotate' : '🔄 Orbit OFF');
+});
+
+// Start overlay
+document.getElementById('startCamBtn').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  startCam();
+});
+document.getElementById('skipBtn').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  setStatus('MOUSE/TOUCH MODE', 's-wait');
+  notify('🖱 Click and drag to draw!');
+});
+
+// ── SAVE ─────────────────────────────────────────────
+function saveArt() {
+  const c = document.createElement('canvas');
+  c.width = innerWidth; c.height = innerHeight;
+  const ctx = c.getContext('2d');
+  if (bgMode === 'ar' && videoEl.srcObject) {
+    ctx.save(); ctx.scale(-1,1); ctx.drawImage(videoEl,-innerWidth,0,innerWidth,innerHeight); ctx.restore();
+  } else {
+    ctx.fillStyle = '#00000a'; ctx.fillRect(0,0,c.width,c.height);
+  }
+  renderer.render(scene, cam3d);
+  ctx.drawImage(threeCanvas, 0, 0);
+  const a = document.createElement('a');
+  a.download = 'ar-3d-art-' + Date.now() + '.png';
+  a.href = c.toDataURL('image/png');
+  a.click();
+  notify('📸 Art saved!');
+}
+
+// ── NOTIFY ───────────────────────────────────────────
+let _ntimer;
+function notify(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg; el.style.opacity = '1';
+  clearTimeout(_ntimer);
+  _ntimer = setTimeout(() => el.style.opacity = '0', 2600);
+}
+
+// ── ORBIT DRAG ───────────────────────────────────────
+let orbitDragging = false, orbitLast = { x:0, y:0 };
+threeCanvas.addEventListener('mousedown', e => {
+  if (!orbitEnabled || e.button !== 2) return;
+  orbitDragging = true; orbitLast = { x:e.clientX, y:e.clientY };
+}, true);
+document.addEventListener('mousemove', e => {
+  if (!orbitDragging) return;
+  const dx = e.clientX - orbitLast.x, dy = e.clientY - orbitLast.y;
+  scene.rotation.y += dx * 0.005;
+  scene.rotation.x += dy * 0.005;
+  orbitLast = { x:e.clientX, y:e.clientY };
+});
+document.addEventListener('mouseup', () => orbitDragging = false);
+
+// ── RESIZE ───────────────────────────────────────────
+window.addEventListener('resize', () => {
+  cam3d.aspect = innerWidth / innerHeight;
+  cam3d.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  lmCanvas.width = innerWidth; lmCanvas.height = innerHeight;
+});
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════════
+let T = 0;
 function animate() {
   requestAnimationFrame(animate);
-  t += 0.01;
+  T += 0.01;
 
-  // Pulse glow strokes
-  allStrokes.forEach((l, i) => {
-    if (l.material.transparent)
-      l.material.opacity = 0.12 + Math.sin(t*1.8+i)*0.1;
-  });
+  // Update particles & glow
+  for (let i = allStrokes.length - 1; i >= 0; i--) {
+    const obj = allStrokes[i];
+    if (!obj || !obj.material) continue;
+    const ud = obj.userData;
 
-  // Spin ring on finger dot
-  if (fingerRing) fingerRing.rotation.z += 0.04;
+    if (ud.type === 'fire') {
+      obj.position.y += ud.vy;
+      obj.material.opacity -= ud.decay;
+      if (obj.material.opacity <= 0) { scene.remove(obj); allStrokes.splice(i,1); }
+    } else if (ud.type === 'particle') {
+      obj.material.opacity -= ud.decay;
+      if (obj.material.opacity <= 0) { scene.remove(obj); allStrokes.splice(i,1); }
+    } else if (obj.material.transparent) {
+      // Pulse glow layers
+      obj.material.opacity = Math.max(0.02, 0.1 + Math.sin(T*1.6 + i*0.25) * 0.07);
+    }
 
-  // Scene breathe
-  if (!isDrawing) scene.rotation.y = Math.sin(t*0.1)*0.02;
+    // Galaxy rainbow shift on glow
+    if (currentTool === 'galaxy' && obj.material.transparent) {
+      obj.material.color.setHSL((T * 0.08 + i * 0.04) % 1, 1, 0.6);
+    }
+  }
 
-  renderer.render(scene, camera3d);
+  // Finger cursor animations
+  if (fingerDot.visible) {
+    fingerRing.rotation.z += 0.055;
+    fingerDot.scale.setScalar(0.88 + Math.sin(T * 3.5) * 0.14);
+  }
+
+  // Gentle scene breathe in space mode
+  if (bgMode === '3d' && !isDrawing && !orbitDragging) {
+    scene.rotation.y += 0.0004;
+  }
+
+  renderer.render(scene, cam3d);
 }
 animate();
-
-// Init status
-setStatus('📵 PRESS CAM START', 's-wait');
+setStatus('PRESS START', 's-wait');
 </script>
 </body>
 </html>
