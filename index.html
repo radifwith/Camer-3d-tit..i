@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✋ 3D Hand Draw</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; cursor: none; }
+
+  #threeCanvas { position: fixed; top: 0; left: 0; z-index: 1; }
+
+  /* Camera feed - small corner preview */
+  #camWrap {
+    position: fixed;
+    bottom: 90px; right: 16px;
+    width: 200px; height: 150px;
+    z-index: 20;
+    border: 1px solid #0ff4;
+    box-shadow: 0 0 20px #0ff3;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #videoEl {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* mirror */
+    opacity: 0.7;
+  }
+  #landmarkCanvas {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+  }
+
+  /* HUD */
+  #hud {
+    position: fixed; top: 18px; left: 18px;
+    z-index: 30; color: #0ff;
+    text-shadow: 0 0 10px #0ff;
+    font-size: 13px; line-height: 2;
+    pointer-events: none;
+  }
+  #hud h1 {
+    font-size: 22px; letter-spacing: 4px;
+    color: #fff; text-shadow: 0 0 20px #0ff, 0 0 40px #0af;
+    margin-bottom: 4px;
+  }
+  #status {
+    display: inline-block;
+    padding: 3px 10px;
+    border: 1px solid currentColor;
+    font-size: 11px; letter-spacing: 2px;
+    margin-top: 4px;
+  }
+  .s-ok  { color: #0f0; border-color: #0f0; text-shadow: 0 0 8px #0f0; }
+  .s-wait{ color: #ff0; border-color: #ff0; text-shadow: 0 0 8px #ff0; }
+  .s-err { color: #f44; border-color: #f44; text-shadow: 0 0 8px #f44; }
+
+  /* Controls */
+  #controls {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 10px; z-index: 30;
+  }
+  button {
+    background: transparent;
+    border: 1px solid #0ff; color: #0ff;
+    padding: 8px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px; letter-spacing: 2px;
+    cursor: pointer;
+    text-shadow: 0 0 8px #0ff;
+    box-shadow: 0 0 10px #0ff3, inset 0 0 10px #0ff1;
+    transition: all 0.2s;
+  }
+  button:hover {
+    background: #0ff2;
+    box-shadow: 0 0 20px #0ff, inset 0 0 15px #0ff3;
+    transform: scale(1.05);
+  }
+
+  /* Color palette */
+  #palette {
+    position: fixed; right: 16px; top: 50%;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 10px; z-index: 30;
+  }
+  .cBtn {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid #fff3; cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .cBtn.active, .cBtn:hover {
+    transform: scale(1.35); border-color: #fff;
+  }
+
+  /* Pinch indicator */
+  #pinchIndicator {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 50; pointer-events: none;
+    font-size: 40px; opacity: 0;
+    transition: opacity 0.15s;
+    text-shadow: 0 0 30px #fff;
+  }
+
+  /* Custom cursor dot (mouse fallback) */
+  #cursorDot {
+    position: fixed; pointer-events: none; z-index: 999;
+    width: 14px; height: 14px; border-radius: 50%;
+    transform: translate(-50%,-50%);
+    background: #0ff;
+    box-shadow: 0 0 12px #0ff, 0 0 24px #0ff;
+    transition: width 0.1s, height 0.1s;
+  }
+
+  #modeTip {
+    position: fixed; bottom: 60px; left: 50%;
+    transform: translateX(-50%);
+    color: #fff5; font-size: 11px;
+    letter-spacing: 1px; z-index: 30;
+    pointer-events: none; text-align: center;
+  }
+
+  #camLabel {
+    position: absolute; bottom: 4px; left: 6px;
+    font-size: 9px; color: #0ff8; letter-spacing: 1px;
+    z-index: 25;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="threeCanvas"></canvas>
+
+<!-- Camera preview -->
+<div id="camWrap">
+  <video id="videoEl" autoplay playsinline muted></video>
+  <canvas id="landmarkCanvas"></canvas>
+  <div id="camLabel">📷 HAND CAM</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <h1>// 3D.DRAW ✋</h1>
+  <div>HAND TRACKING MODE</div>
+  <div id="status" class="s-wait">⏳ LOADING...</div>
+  <div style="color:#fff5;font-size:11px;margin-top:6px">
+    ✊ PINCH = DRAW<br>
+    ✋ OPEN = STOP<br>
+    🔄 MOUSE FALLBACK ON
+  </div>
+</div>
+
+<div id="palette">
+  <div class="cBtn active" style="background:#00ffff;box-shadow:0 0 10px #0ff" data-color="#00ffff"></div>
+  <div class="cBtn" style="background:#ff00ff;box-shadow:0 0 10px #f0f" data-color="#ff00ff"></div>
+  <div class="cBtn" style="background:#ffff00;box-shadow:0 0 10px #ff0" data-color="#ffff00"></div>
+  <div class="cBtn" style="background:#ff4400;box-shadow:0 0 10px #f40" data-color="#ff4400"></div>
+  <div class="cBtn" style="background:#00ff88;box-shadow:0 0 10px #0f8" data-color="#00ff88"></div>
+  <div class="cBtn" style="background:#ffffff;box-shadow:0 0 10px #fff" data-color="#ffffff"></div>
+</div>
+
+<div id="controls">
+  <button id="clearBtn">[ CLEAR ]</button>
+  <button id="undoBtn">[ UNDO ]</button>
+  <button id="camBtn">[ CAM START ]</button>
+  <button id="mouseBtn">[ MOUSE MODE ]</button>
+</div>
+
+<div id="modeTip">☝️ HOLD UP INDEX FINGER + PINCH THUMB TO DRAW</div>
+<div id="pinchIndicator">✍️</div>
+<div id="cursorDot"></div>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// ══════════════════════════════════════════════
+//  THREE.JS SCENE
+// ══════════════════════════════════════════════
+const threeCanvas = document.getElementById('threeCanvas');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+scene.fog = new THREE.FogExp2(0x000008, 0.028);
+
+const camera3d = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 500);
+camera3d.position.set(0, 0, 18);
+
+const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+
+// Grid
+const grid = new THREE.GridHelper(50, 50, 0x0a1f1f, 0x0a1f1f);
+grid.position.y = -5;
+scene.add(grid);
+
+// Stars
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(400*3);
+for (let i=0;i<400*3;i++) starPos[i]=(Math.random()-.5)*80;
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0x112244,size:0.07})));
+
+// ── DRAW STATE ──────────────────────────────
+let currentColor = '#00ffff';
+let isDrawing = false;
+let currentLine = null;
+let currentPoints = [];
+const allStrokes = [];
+const strokeGroups = []; // each "stroke group" = main + glow lines
+
+const drawPlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
+const raycaster = new THREE.Raycaster();
+
+function screenToWorld(sx, sy) {
+  const ndc = new THREE.Vector2(
+    (sx/innerWidth)*2-1,
+    -(sy/innerHeight)*2+1
+  );
+  raycaster.setFromCamera(ndc, camera3d);
+  const t = new THREE.Vector3();
+  raycaster.ray.intersectPlane(drawPlane, t);
+  return t;
+}
+
+function startStroke(x, y) {
+  currentPoints = [];
+  const pt = screenToWorld(x, y);
+  if (!pt) return;
+  currentPoints.push(pt.clone());
+
+  const geo = new THREE.BufferGeometry().setFromPoints(currentPoints);
+  const mat = new THREE.LineBasicMaterial({ color: currentColor, linewidth: 2 });
+  currentLine = new THREE.Line(geo, mat);
+  scene.add(currentLine);
+}
+
+function addPoint(x, y) {
+  if (!currentLine) return;
+  const pt = screenToWorld(x, y);
+  if (!pt) return;
+  const last = currentPoints[currentPoints.length-1];
+  if (last && pt.distanceTo(last) < 0.04) return;
+  currentPoints.push(pt.clone());
+  currentLine.geometry.setFromPoints(currentPoints);
+  currentLine.geometry.attributes.position.needsUpdate = true;
+}
+
+function endStroke() {
+  if (!currentLine) return;
+  if (currentPoints.length < 2) { scene.remove(currentLine); currentLine=null; return; }
+
+  const group = [currentLine];
+  // Glow copies
+  for (let g=0; g<3; g++) {
+    const offPts = currentPoints.map(p => new THREE.Vector3(
+      p.x+(Math.random()-.5)*0.09*(g+1),
+      p.y+(Math.random()-.5)*0.09*(g+1),
+      p.z - g*0.06
+    ));
+    const gGeo = new THREE.BufferGeometry().setFromPoints(offPts);
+    const gMat = new THREE.LineBasicMaterial({
+      color: currentColor, transparent:true, opacity: 0.22
+    });
+    const gLine = new THREE.Line(gGeo, gMat);
+    scene.add(gLine);
+    group.push(gLine);
+    allStrokes.push(gLine);
+  }
+  allStrokes.push(currentLine);
+  strokeGroups.push(group);
+  currentLine = null;
+  currentPoints = [];
+}
+
+// ── FLOATING FINGER DOT ──────────────────────
+const fingerGeo = new THREE.SphereGeometry(0.15, 12, 12);
+const fingerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+const fingerDot = new THREE.Mesh(fingerGeo, fingerMat);
+fingerDot.visible = false;
+scene.add(fingerDot);
+
+// Glow ring around finger
+const ringGeo = new THREE.TorusGeometry(0.25, 0.04, 8, 32);
+const ringMat = new THREE.MeshBasicMaterial({ color:0x00ffff, transparent:true, opacity:0.4 });
+const fingerRing = new THREE.Mesh(ringGeo, ringMat);
+fingerDot.add(fingerRing);
+
+// ══════════════════════════════════════════════
+//  MEDIAPIPE HANDS
+// ══════════════════════════════════════════════
+const videoEl = document.getElementById('videoEl');
+const lmCanvas = document.getElementById('landmarkCanvas');
+const lmCtx = lmCanvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const pinchEl = document.getElementById('pinchIndicator');
+
+let handTrackingActive = false;
+let lastFingerX = innerWidth/2, lastFingerY = innerHeight/2;
+let pinchActive = false;
+let handsModel = null;
+let mpCamera = null;
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = 'status ' + cls;
+}
+
+async function startHandTracking() {
+  setStatus('⏳ CAM PERMISSION...', 's-wait');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }
+    });
+    videoEl.srcObject = stream;
+    await new Promise(r => videoEl.onloadedmetadata = r);
+    lmCanvas.width = videoEl.videoWidth;
+    lmCanvas.height = videoEl.videoHeight;
+
+    setStatus('⏳ LOADING MediaPipe...', 's-wait');
+
+    handsModel = new Hands({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+    });
+    handsModel.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6,
+    });
+    handsModel.onResults(onHandResults);
+
+    mpCamera = new Camera(videoEl, {
+      onFrame: async () => { await handsModel.send({ image: videoEl }); },
+      width: 640, height: 480
+    });
+    mpCamera.start();
+
+    handTrackingActive = true;
+    document.getElementById('camBtn').textContent = '[ CAM STOP ]';
+    setStatus('✅ HAND TRACK ON', 's-ok');
+
+  } catch(err) {
+    setStatus('❌ CAM ERROR', 's-err');
+    console.error(err);
+    alert('Camera error: ' + err.message + '\n\nUse Mouse Mode instead!');
+  }
+}
+
+function stopHandTracking() {
+  if (mpCamera) { mpCamera.stop(); mpCamera = null; }
+  if (videoEl.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
+  }
+  handTrackingActive = false;
+  fingerDot.visible = false;
+  if (isDrawing) { endStroke(); isDrawing = false; }
+  document.getElementById('camBtn').textContent = '[ CAM START ]';
+  setStatus('📵 CAM OFF', 's-wait');
+}
+
+// ── HAND RESULTS ─────────────────────────────
+function onHandResults(results) {
+  // Draw landmarks on small preview
+  lmCtx.clearRect(0, 0, lmCanvas.width, lmCanvas.height);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    fingerDot.visible = false;
+    if (isDrawing) { endStroke(); isDrawing = false; }
+    return;
+  }
+
+  const lm = results.multiHandLandmarks[0];
+
+  // Draw skeleton on preview
+  drawSkeleton(lm);
+
+  // Index finger tip = landmark 8
+  // Thumb tip = landmark 4
+  const indexTip = lm[8];
+  const thumbTip = lm[4];
+
+  // Map to screen (note: MediaPipe x is mirrored, we mirror video too)
+  const sx = (1 - indexTip.x) * innerWidth;
+  const sy = indexTip.y * innerHeight;
+
+  lastFingerX = sx;
+  lastFingerY = sy;
+
+  // Move 3D finger dot
+  const worldPt = screenToWorld(sx, sy);
+  if (worldPt) {
+    fingerDot.visible = true;
+    fingerDot.position.copy(worldPt);
+    fingerMat.color.setStyle(currentColor);
+    ringMat.color.setStyle(currentColor);
+  }
+
+  // Pinch detection: distance between index tip and thumb tip
+  const dx = indexTip.x - thumbTip.x;
+  const dy = indexTip.y - thumbTip.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const isPinching = dist < 0.07;
+
+  if (isPinching && !pinchActive) {
+    // Start drawing
+    pinchActive = true;
+    isDrawing = true;
+    startStroke(sx, sy);
+    pinchEl.style.opacity = '1';
+    fingerRing.scale.set(0.5,0.5,0.5);
+  } else if (isPinching && pinchActive) {
+    // Continue drawing
+    addPoint(sx, sy);
+  } else if (!isPinching && pinchActive) {
+    // Stop drawing
+    pinchActive = false;
+    isDrawing = false;
+    endStroke();
+    pinchEl.style.opacity = '0';
+    fingerRing.scale.set(1,1,1);
+  }
+}
+
+// Draw hand skeleton on preview canvas
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],[0,17]
+];
+
+function drawSkeleton(lm) {
+  const w = lmCanvas.width, h = lmCanvas.height;
+  lmCtx.strokeStyle = '#0ff';
+  lmCtx.lineWidth = 1.5;
+  lmCtx.shadowColor = '#0ff';
+  lmCtx.shadowBlur = 6;
+
+  CONNECTIONS.forEach(([a,b]) => {
+    lmCtx.beginPath();
+    lmCtx.moveTo(lm[a].x*w, lm[a].y*h);
+    lmCtx.lineTo(lm[b].x*w, lm[b].y*h);
+    lmCtx.stroke();
+  });
+
+  lm.forEach((pt, i) => {
+    lmCtx.beginPath();
+    lmCtx.arc(pt.x*w, pt.y*h, i===8||i===4?4:2.5, 0, Math.PI*2);
+    lmCtx.fillStyle = i===8 ? '#ff0' : i===4 ? '#f0f' : '#0ff';
+    lmCtx.shadowColor = lmCtx.fillStyle;
+    lmCtx.fill();
+  });
+}
+
+// ══════════════════════════════════════════════
+//  MOUSE FALLBACK
+// ══════════════════════════════════════════════
+let mouseMode = false;
+const cursorDot = document.getElementById('cursorDot');
+
+threeCanvas.addEventListener('mousedown', e => {
+  if (e.button !== 0 || handTrackingActive) return;
+  isDrawing = true;
+  startStroke(e.clientX, e.clientY);
+});
+threeCanvas.addEventListener('mousemove', e => {
+  cursorDot.style.left = e.clientX+'px';
+  cursorDot.style.top  = e.clientY+'px';
+  cursorDot.style.background = currentColor;
+  cursorDot.style.boxShadow = `0 0 12px ${currentColor}, 0 0 24px ${currentColor}`;
+  if (isDrawing && !handTrackingActive) addPoint(e.clientX, e.clientY);
+});
+threeCanvas.addEventListener('mouseup', e => {
+  if (e.button!==0 || handTrackingActive) return;
+  isDrawing = false; endStroke();
+});
+threeCanvas.addEventListener('contextmenu', e => e.preventDefault());
+threeCanvas.addEventListener('wheel', e => {
+  camera3d.position.z += e.deltaY * 0.04;
+  camera3d.position.z = Math.max(4, Math.min(60, camera3d.position.z));
+});
+
+// Touch
+threeCanvas.addEventListener('touchstart', e=>{e.preventDefault();
+  if(handTrackingActive)return;
+  const t=e.touches[0];isDrawing=true;startStroke(t.clientX,t.clientY);},{passive:false});
+threeCanvas.addEventListener('touchmove', e=>{e.preventDefault();
+  if(handTrackingActive)return;
+  const t=e.touches[0];addPoint(t.clientX,t.clientY);},{passive:false});
+threeCanvas.addEventListener('touchend', e=>{
+  if(handTrackingActive)return;
+  isDrawing=false;endStroke();},{passive:false});
+
+// ── BUTTONS ──────────────────────────────────
+document.getElementById('clearBtn').addEventListener('click', () => {
+  allStrokes.forEach(l => scene.remove(l));
+  allStrokes.length = 0; strokeGroups.length = 0;
+});
+
+document.getElementById('undoBtn').addEventListener('click', () => {
+  const grp = strokeGroups.pop();
+  if (!grp) return;
+  grp.forEach(l => { scene.remove(l); allStrokes.splice(allStrokes.indexOf(l),1); });
+});
+
+document.getElementById('camBtn').addEventListener('click', () => {
+  if (!handTrackingActive) startHandTracking();
+  else stopHandTracking();
+});
+
+document.getElementById('mouseBtn').addEventListener('click', () => {
+  mouseMode = !mouseMode;
+  document.getElementById('mouseBtn').textContent =
+    mouseMode ? '[ HAND MODE ]' : '[ MOUSE MODE ]';
+  if (mouseMode && handTrackingActive) stopHandTracking();
+});
+
+document.querySelectorAll('.cBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cBtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentColor = btn.dataset.color;
+    fingerMat.color.setStyle(currentColor);
+  });
+});
+
+// ── RESIZE ───────────────────────────────────
+window.addEventListener('resize', () => {
+  camera3d.aspect = innerWidth/innerHeight;
+  camera3d.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── ANIMATE ──────────────────────────────────
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.01;
+
+  // Pulse glow strokes
+  allStrokes.forEach((l, i) => {
+    if (l.material.transparent)
+      l.material.opacity = 0.12 + Math.sin(t*1.8+i)*0.1;
+  });
+
+  // Spin ring on finger dot
+  if (fingerRing) fingerRing.rotation.z += 0.04;
+
+  // Scene breathe
+  if (!isDrawing) scene.rotation.y = Math.sin(t*0.1)*0.02;
+
+  renderer.render(scene, camera3d);
+}
+animate();
+
+// Init status
+setStatus('📵 PRESS CAM START', 's-wait');
+</script>
+</body>
+</html>
